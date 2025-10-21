@@ -1,0 +1,21 @@
+# Don't include these in Docker image
+.git
+.gitignore
+.env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.vscode
+.idea
+*.md
+!README.md
+data/sync_state.db*
+*.log
+

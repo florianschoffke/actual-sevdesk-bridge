@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  actual-sevdesk-bridge:
+    build: .
+    container_name: actual-sevdesk-bridge
+    restart: unless-stopped
+    volumes:
+      # Mount data directory to persist SQLite database
+      - ./data:/app/data
+    environment:
+      # SevDesk Configuration
+      - SEVDESK_API_KEY=${SEVDESK_API_KEY}
+      
+      # Actual Budget Configuration
+      - ACTUAL_BUDGET_URL=${ACTUAL_BUDGET_URL}
+      - ACTUAL_BUDGET_PASSWORD=${ACTUAL_BUDGET_PASSWORD}
+      - ACTUAL_BUDGET_FILE_ID=${ACTUAL_BUDGET_FILE_ID}
+      - ACTUAL_BUDGET_VERIFY_SSL=${ACTUAL_BUDGET_VERIFY_SSL:-true}
+      
+      # Sync Configuration
+      - ACTUAL_ACCOUNT_NAME=${ACTUAL_ACCOUNT_NAME:-EGB Funds}
+      - SYNC_DAYS_BACK=${SYNC_DAYS_BACK:-90}
+      
+      # Email Configuration (optional)
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - EMAIL_SMTP_HOST=${EMAIL_SMTP_HOST:-}
+      - EMAIL_SMTP_PORT=${EMAIL_SMTP_PORT:-587}
+      - EMAIL_SMTP_USERNAME=${EMAIL_SMTP_USERNAME:-}
+      - EMAIL_SMTP_PASSWORD=${EMAIL_SMTP_PASSWORD:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      - EMAIL_TO=${EMAIL_TO:-}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-true}
+    # Run sync every hour
+    command: sh -c "while true; do python3 main.py sync-all && python3 verify_sync.py; sleep 3600; done"

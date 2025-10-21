@@ -2,7 +2,46 @@
 
 A Python pipeline that synchronizes financial data from SevDesk to Actual Budget.
 
-## 🔄 Pipeline Architecture
+## � Quick Start
+
+### Docker Deployment (Recommended for Synology NAS)
+
+```bash
+# 1. Clone repository
+git clone https://github.com/florianschoffke/actual-sevdesk-bridge.git
+cd actual-sevdesk-bridge
+
+# 2. Configure
+cp .env.example .env
+# Edit .env with your credentials
+
+# 3. Run with Docker Compose
+docker-compose up -d
+
+# 4. Check logs
+docker-compose logs -f
+```
+
+**📖 See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for detailed Synology NAS deployment instructions.**
+
+### Local Installation
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Configure
+cp .env.example .env
+# Edit .env with your SevDesk API key and Actual Budget credentials
+
+# 3. Run sync
+python3 main.py sync-all
+
+# 4. Verify consistency
+python3 verify_sync.py
+```
+
+## �🔄 Pipeline Architecture
 
 This project implements a **3-stage sync pipeline**:
 
