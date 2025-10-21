@@ -73,41 +73,21 @@ rm /tmp/actual-sevdesk-bridge.tar.gz
    - Click **Advanced Settings**
 
 4. **Volume Settings (Important!):**
-   - Click **Add Folder**
-   - Select: `/docker/actual-sevdesk-bridge/data`
+   Click **Add Folder** twice to add two volumes:
+   
+   **Volume 1 - Data directory:**
+   - File/Folder: `/docker/actual-sevdesk-bridge/data`
    - Mount path: `/app/data`
    - Read/Write: ✅
+   
+   **Volume 2 - Configuration file:**
+   - File/Folder: `/docker/actual-sevdesk-bridge/.env`
+   - Mount path: `/app/.env`
+   - Read/Write: ✅
 
-5. **Environment Variables:**
-   Add all variables from your `.env` file:
+5. **No need to set Environment Variables** (they're in the .env file!)
 
-   | Variable | Example Value |
-   |----------|---------------|
-   | `SEVDESK_API_KEY` | your_api_key |
-   | `ACTUAL_BUDGET_URL` | http://192.168.1.100:5006 |
-   | `ACTUAL_BUDGET_PASSWORD` | your_password |
-   | `ACTUAL_BUDGET_FILE_ID` | My Budget |
-   | `ACTUAL_BUDGET_VERIFY_SSL` | true |
-   | `ACTUAL_ACCOUNT_NAME` | EGB Funds |
-   | `LOG_LEVEL` | INFO |
-   | `EMAIL_ENABLED` | true |
-   | `EMAIL_SMTP_HOST` | smtp.example.com |
-   | `EMAIL_SMTP_PORT` | 587 |
-   | `EMAIL_SMTP_USERNAME` | your_email |
-   | `EMAIL_SMTP_PASSWORD` | your_password |
-   | `EMAIL_FROM` | sender@example.com |
-   | `EMAIL_TO` | recipient@example.com |
-   | `EMAIL_USE_TLS` | true |
-
-6. **Execution Command:**
-   - Command: `sh`
-   - Arguments: 
-     ```
-     -c
-     while true; do python3 main.py sync-all && python3 verify_sync.py; sleep 3600; done
-     ```
-
-7. Click **Done** and **Start** the container
+6. Click **Done** and **Start** the container
 
 ### Via SSH (Alternative):
 
@@ -117,23 +97,8 @@ sudo docker run -d \
   --name actual-sevdesk-bridge \
   --restart unless-stopped \
   -v /volume1/docker/actual-sevdesk-bridge/data:/app/data \
-  -e SEVDESK_API_KEY="your_api_key" \
-  -e ACTUAL_BUDGET_URL="http://192.168.1.100:5006" \
-  -e ACTUAL_BUDGET_PASSWORD="your_password" \
-  -e ACTUAL_BUDGET_FILE_ID="My Budget" \
-  -e ACTUAL_BUDGET_VERIFY_SSL="true" \
-  -e ACTUAL_ACCOUNT_NAME="EGB Funds" \
-  -e LOG_LEVEL="INFO" \
-  -e EMAIL_ENABLED="true" \
-  -e EMAIL_SMTP_HOST="smtp.example.com" \
-  -e EMAIL_SMTP_PORT="587" \
-  -e EMAIL_SMTP_USERNAME="your_email" \
-  -e EMAIL_SMTP_PASSWORD="your_password" \
-  -e EMAIL_FROM="sender@example.com" \
-  -e EMAIL_TO="recipient@example.com" \
-  -e EMAIL_USE_TLS="true" \
-  actual-sevdesk-bridge:latest \
-  sh -c "while true; do python3 main.py sync-all && python3 verify_sync.py; sleep 3600; done"
+  -v /volume1/docker/actual-sevdesk-bridge/.env:/app/.env \
+  actual-sevdesk-bridge:latest
 ```
 
 ## 📊 Step 5: Verify Container is Running

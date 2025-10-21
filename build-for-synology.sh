@@ -3,10 +3,11 @@
 
 set -e
 
-echo "🐳 Building Docker image for Synology..."
+echo "🐳 Building Docker image for Synology (AMD64 architecture)..."
 
-# Build the image
-docker build -t actual-sevdesk-bridge:latest .
+# Build the image for AMD64/x86_64 architecture (Synology NAS compatibility)
+# Note: This uses QEMU emulation on ARM64 Macs, which may be slower but ensures compatibility
+docker build --platform linux/amd64 -t actual-sevdesk-bridge:latest .
 
 # Create export directory
 mkdir -p docker-image

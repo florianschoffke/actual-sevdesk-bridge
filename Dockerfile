@@ -21,5 +21,6 @@ RUN mkdir -p /app/data
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Default command (can be overridden)
-CMD ["python3", "main.py", "sync-all"]
+# The .env file will be mounted at runtime to /app/.env
+# Default command runs the sync loop
+CMD ["sh", "-c", "while true; do python3 main.py sync-all && python3 verify_sync.py; sleep 3600; done"]
