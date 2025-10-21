@@ -1,0 +1,16 @@
+actual# Core dependencies
+
+requestsrequests>=2.31.0
+
+python-dotenvpython-dotenv>=1.0.0
+
+python-dateutilactualpy>=0.13.0
+
+pytz
+
+# Utilities
+python-dateutil>=2.8.2
+pytz>=2023.3
+
+# Testing
+pytest>=7.0.0
