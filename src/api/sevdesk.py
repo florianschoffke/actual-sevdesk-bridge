@@ -197,14 +197,24 @@ class SevDeskClient:
         self.rate_limit_delay = 0.01  # Minimal delay (10ms instead of 100ms)
         
         try:
-            if show_progress:
-                from tqdm import tqdm
-                iterator = tqdm(voucher_ids, desc="Fetching positions", unit="voucher")
-            else:
-                iterator = voucher_ids
+            import logging
+            logger = logging.getLogger(__name__)
             
-            for voucher_id in iterator:
+            total = len(voucher_ids)
+            last_logged_percent = -10
+            
+            for idx, voucher_id in enumerate(voucher_ids, 1):
                 positions_by_voucher[voucher_id] = self.get_voucher_positions(voucher_id)
+                
+                if show_progress:
+                    percent = int((idx / total) * 100)
+                    # Log every 10%
+                    if percent >= last_logged_percent + 10:
+                        logger.info(f"📥 Fetching positions: {percent}% ({idx}/{total})")
+                        last_logged_percent = percent
+            
+            if show_progress and total > 0:
+                logger.info(f"📥 Fetching positions: 100% ({total}/{total})")
         finally:
             # Restore original rate limiting
             self.rate_limit_delay = original_delay

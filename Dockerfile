@@ -23,4 +23,4 @@ ENV PYTHONUNBUFFERED=1
 
 # The .env file will be mounted at runtime to /app/.env
 # Default command runs the sync loop
-CMD ["sh", "-c", "while true; do python3 main.py sync-all && python3 verify_sync.py; sleep 3600; done"]
+CMD ["sh", "-c", "echo '🚀 Starting Actual-SevDesk Bridge...' && echo '📅 Current time:' $(date) && echo '📁 Checking .env file...' && ls -la /app/.env 2>/dev/null && echo '✅ .env file found' || echo '⚠️  .env file not found!' && echo '' && while true; do echo '🔄 Starting sync cycle...' && python3 main.py sync-all && python3 verify_sync.py && echo '✅ Sync cycle complete. Sleeping for 1 hour...' && sleep 3600; done"]

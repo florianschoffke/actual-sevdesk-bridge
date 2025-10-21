@@ -3,7 +3,6 @@ import logging
 import warnings
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, List, Dict
-from tqdm import tqdm
 
 # Suppress SSL warnings for cleaner output
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
@@ -144,92 +143,103 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
     already_synced = 0
     ignored_count = 0
     
-    with tqdm(
-        total=len(vouchers), 
-        desc="Validating", 
-        unit="voucher", 
-        disable=dry_run,
-        bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]',
-        leave=True,
-        dynamic_ncols=True
-    ) as pbar:
-        for voucher in vouchers:
-            voucher_id = str(voucher.get('id'))
+    total = len(vouchers)
+    last_logged_percent = -10
+    
+    for idx, voucher in enumerate(vouchers, 1):
+        voucher_id = str(voucher.get('id'))
+        
+        # Check if already synced successfully
+        existing_mapping = db.get_transaction_mapping(f"voucher_{voucher_id}")
+        if existing_mapping:
+            # Check if voucher was modified since last sync
+            current_update = voucher.get('update')
+            stored_update = existing_mapping.get('sevdesk_update_timestamp')
             
-            # Check if already synced successfully
-            existing_mapping = db.get_transaction_mapping(f"voucher_{voucher_id}")
-            if existing_mapping:
-                # Check if voucher was modified since last sync
-                current_update = voucher.get('update')
-                stored_update = existing_mapping.get('sevdesk_update_timestamp')
-                
-                if current_update and stored_update and current_update > stored_update:
-                    # Voucher was modified - need to update
-                    logger.debug(f"Voucher {voucher_id} was modified (stored: {stored_update}, current: {current_update})")
-                    # Continue to validation and mark as modified
-                else:
-                    # No change - skip
-                    already_synced += 1
-                    pbar.update(1)
-                    continue
-            
-            # Get positions from cache (no API call!)
-            positions = positions_by_voucher.get(voucher_id, [])
-            
-            # Check if this voucher should be ignored (Geldtransit or Durchlaufende Posten)
-            if positions:
-                accounting_type_ids = [p.get('accountingType', {}).get('id') for p in positions]
-                # Skip Geldtransit (40, 81) and Durchlaufende Posten (39)
-                if any(t in ['39', '40', '81'] for t in accounting_type_ids):
-                    # Check if not already marked as ignored
-                    if not db.is_voucher_ignored(f"voucher_{voucher_id}"):
-                        # Determine reason
-                        if '39' in accounting_type_ids:
-                            reason = "Durchlaufende Posten"
-                        else:
-                            reason = "Geldtransit"
-                        
-                        if not dry_run:
-                            db.mark_voucher_ignored(f"voucher_{voucher_id}", reason)
-                    
-                    ignored_count += 1
-                    pbar.update(1)
-                    continue
-            
-            # Get voucher number for better identification
-            voucher_number = voucher.get('voucherNumber') or voucher.get('description', '')
-            
-            # Validate
-            result = validator.validate_voucher(voucher, positions, voucher_number)
-            
-            # Mark validation status in cache
-            if not dry_run:
-                db.mark_voucher_validation(
-                    voucher_id=voucher_id,
-                    is_valid=result.is_valid,
-                    reason=result.reason if not result.is_valid else None
-                )
-            
-            if result.is_valid:
-                if existing_mapping:
-                    # Mark as modified (for update)
-                    modified_vouchers.append((voucher, positions, result, existing_mapping))
-                else:
-                    # New voucher (for creation)
-                    valid_vouchers.append((voucher, positions, result))
+            if current_update and stored_update and current_update > stored_update:
+                # Voucher was modified - need to update
+                logger.debug(f"Voucher {voucher_id} was modified (stored: {stored_update}, current: {current_update})")
+                # Continue to validation and mark as modified
             else:
-                # Save/update failed voucher in database
-                if not dry_run:
-                    db.save_failed_voucher(
-                        voucher_id=result.voucher_id,
-                        voucher_date=result.voucher_date,
-                        amount=result.amount,
-                        voucher_type=result.voucher_type,
-                        failure_reason=result.reason,
-                        voucher_number=voucher_number
-                    )
-            
-            pbar.update(1)
+                # No change - skip
+                already_synced += 1
+                
+                # Log progress
+                percent = int((idx / total) * 100)
+                if percent >= last_logged_percent + 10:
+                    logger.info(f"✅ Validating: {percent}% ({idx}/{total})")
+                    last_logged_percent = percent
+                continue
+        
+        # Get positions from cache (no API call!)
+        positions = positions_by_voucher.get(voucher_id, [])
+        
+        # Check if this voucher should be ignored (Geldtransit or Durchlaufende Posten)
+        if positions:
+            accounting_type_ids = [p.get('accountingType', {}).get('id') for p in positions]
+            # Skip Geldtransit (40, 81) and Durchlaufende Posten (39)
+            if any(t in ['39', '40', '81'] for t in accounting_type_ids):
+                # Check if not already marked as ignored
+                if not db.is_voucher_ignored(f"voucher_{voucher_id}"):
+                    # Determine reason
+                    if '39' in accounting_type_ids:
+                        reason = "Durchlaufende Posten"
+                    else:
+                        reason = "Geldtransit"
+                    
+                    if not dry_run:
+                        db.mark_voucher_ignored(f"voucher_{voucher_id}", reason)
+                
+                ignored_count += 1
+                
+                # Log progress
+                percent = int((idx / total) * 100)
+                if percent >= last_logged_percent + 10:
+                    logger.info(f"✅ Validating: {percent}% ({idx}/{total})")
+                    last_logged_percent = percent
+                continue
+        
+        # Get voucher number for better identification
+        voucher_number = voucher.get('voucherNumber') or voucher.get('description', '')
+        
+        # Validate
+        result = validator.validate_voucher(voucher, positions, voucher_number)
+        
+        # Mark validation status in cache
+        if not dry_run:
+            db.mark_voucher_validation(
+                voucher_id=voucher_id,
+                is_valid=result.is_valid,
+                reason=result.reason if not result.is_valid else None
+            )
+        
+        if result.is_valid:
+            if existing_mapping:
+                # Mark as modified (for update)
+                modified_vouchers.append((voucher, positions, result, existing_mapping))
+            else:
+                # New voucher (for creation)
+                valid_vouchers.append((voucher, positions, result))
+        else:
+            # Save/update failed voucher in database
+            if not dry_run:
+                db.save_failed_voucher(
+                    voucher_id=result.voucher_id,
+                    voucher_date=result.voucher_date,
+                    amount=result.amount,
+                    voucher_type=result.voucher_type,
+                    failure_reason=result.reason,
+                    voucher_number=voucher_number
+                )
+        
+        # Log progress
+        percent = int((idx / total) * 100)
+        if percent >= last_logged_percent + 10:
+            logger.info(f"✅ Validating: {percent}% ({idx}/{total})")
+            last_logged_percent = percent
+    
+    if total > 0:
+        logger.info(f"✅ Validating: 100% ({total}/{total})")
     
     logger.info(f"✅ {len(valid_vouchers)} new vouchers passed validation")
     logger.info(f"🔄 {len(modified_vouchers)} modified vouchers will be updated")

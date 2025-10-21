@@ -54,7 +54,8 @@ class Database:
                 sevdesk_value_date TEXT,
                 sevdesk_amount REAL,
                 sevdesk_update_timestamp TEXT,
-                synced_at TEXT NOT NULL
+                synced_at TEXT NOT NULL,
+                ignored INTEGER DEFAULT 0
             )
         ''')
         
