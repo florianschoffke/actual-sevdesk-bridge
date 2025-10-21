@@ -363,14 +363,28 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
                 # Use voucher ID as imported_id for deduplication
                 imported_id = f"sevdesk_voucher_{voucher_id}"
                 
+                # Create notes with voucher info for better tracking
+                notes_parts = []
+                if voucher_number:
+                    notes_parts.append(f"Voucher: {voucher_number}")
+                notes_parts.append(f"ID: {voucher_id}")
+                notes = " | ".join(notes_parts)
+                
+                # Create unique imported_payee by appending voucher ID to prevent deduplication
+                base_payee = voucher.get('supplier', {}).get('name', '') or voucher.get('description', '') or ''
+                if base_payee:
+                    imported_payee = f"{base_payee} [#{voucher_id}]"
+                else:
+                    imported_payee = f"Voucher #{voucher_id}"
+                
                 # Prepare transaction data for import
                 transactions_to_import.append({
                     'date': voucher_date,
                     'amount': amount_cents,
                     'category_id': category_id,
                     'imported_id': imported_id,
-                    'imported_payee': voucher.get('supplier', {}).get('name', '') or voucher.get('description', ''),
-                    'notes': '',  # Don't add notes - keep Notizen empty
+                    'imported_payee': imported_payee,
+                    'notes': notes,
                     'cleared': False
                 })
                 
@@ -382,7 +396,9 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
                     'update_timestamp': voucher.get('update')
                 }
             
-            # Import transactions using the new method
+            # Import transactions one-by-one to avoid bulk deduplication issues
+            logger.info(f"Importing {len(transactions_to_import)} new/updated transactions...")
+            
             result = actual.import_transactions(account_id, transactions_to_import)
             
             # Save mappings for newly added AND updated transactions

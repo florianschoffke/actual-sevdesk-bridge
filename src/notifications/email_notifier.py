@@ -204,6 +204,86 @@ The system will automatically re-validate these vouchers on the next sync once c
             logger.error(f"Failed to send validation report: {e}")
             return False
     
+    def send_consistency_report(self, report_output: str, checks_passed: bool) -> bool:
+        """
+        Send consistency check report email.
+        
+        Args:
+            report_output: Full text output from the consistency check
+            checks_passed: Whether all checks passed
+            
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        if not self.enabled:
+            logger.info("Email notifications disabled, skipping")
+            return False
+        
+        try:
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = self.from_address
+            msg['To'] = self.to_address
+            
+            if checks_passed:
+                msg['Subject'] = '✅ Sync Consistency Check - All Checks Passed'
+            else:
+                msg['Subject'] = '❌ Sync Consistency Check - Issues Detected'
+            
+            # Format email body
+            body_lines = []
+            body_lines.append("Sync Consistency Check Report")
+            body_lines.append("=" * 80)
+            body_lines.append("")
+            
+            if checks_passed:
+                body_lines.append("✅ ALL CHECKS PASSED - Data is consistent!")
+            else:
+                body_lines.append("❌ SOME CHECKS FAILED - Data inconsistency detected!")
+            
+            body_lines.append("")
+            body_lines.append("Full Report:")
+            body_lines.append("-" * 80)
+            body_lines.append(report_output)
+            body_lines.append("")
+            
+            if not checks_passed:
+                body_lines.append("")
+                body_lines.append("Recommended Actions:")
+                body_lines.append("-" * 80)
+                body_lines.append("1. Review the mismatches above")
+                body_lines.append("2. Run: python3 reset_sync.py --yes")
+                body_lines.append("3. Delete all transactions/categories in Actual Budget")
+                body_lines.append("4. Run: python3 sync_from_cache.py")
+            
+            body_lines.append("")
+            body_lines.append(f"Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            body = "\n".join(body_lines)
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Send email
+            logger.info(f"Sending consistency report to {self.to_address}...")
+            
+            # Use SSL connection for port 465
+            if self.smtp_port == 465:
+                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=30)
+            else:
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30)
+                if self.use_tls:
+                    server.starttls()
+            
+            server.login(self.smtp_username, self.smtp_password)
+            server.send_message(msg)
+            server.quit()
+            
+            logger.info(f"✅ Consistency report sent successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send consistency report: {e}")
+            return False
+    
     @classmethod
     def from_config(cls, config) -> 'EmailNotifier':
         """
@@ -225,3 +305,4 @@ The system will automatically re-validate these vouchers on the next sync once c
             use_tls=config.email_use_tls,
             enabled=config.email_enabled
         )
+

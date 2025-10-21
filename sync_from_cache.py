@@ -13,6 +13,7 @@ from src.config import get_config
 from src.storage import Database
 from src.api.actual import ActualBudgetClient
 from src.voucher_validator import VoucherValidator
+from src.sync.categories import sync_categories
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,8 +24,17 @@ def main():
     db = Database(config.db_path)
     
     logger.info("=" * 60)
-    logger.info("Sync Vouchers from Cache to Actual Budget")
+    logger.info("Sync from Cache to Actual Budget")
     logger.info("=" * 60)
+    
+    # Step 1: Sync categories first
+    logger.info("\n📂 Step 1: Syncing categories...")
+    logger.info("-" * 60)
+    category_result = sync_categories(config)
+    logger.info(f"✅ Categories: {category_result.get('synced', 0)} synced, {category_result.get('created', 0)} created\n")
+    
+    logger.info("💰 Step 2: Syncing vouchers...")
+    logger.info("-" * 60)
     
     # Get all cached vouchers
     logger.info("📦 Loading vouchers from cache...")
@@ -158,14 +168,29 @@ def main():
             # Use voucher ID as imported_id for deduplication
             imported_id = f"sevdesk_voucher_{voucher_id}"
             
+            # Create notes with voucher info for better tracking
+            voucher_number = voucher.get('voucherNumber', '')
+            notes_parts = []
+            if voucher_number:
+                notes_parts.append(f"Voucher: {voucher_number}")
+            notes_parts.append(f"ID: {voucher_id}")
+            notes = " | ".join(notes_parts)
+            
+            # Create unique imported_payee by appending voucher ID to prevent deduplication
+            base_payee = voucher.get('supplier', {}).get('name', '') or voucher.get('description', '') or ''
+            if base_payee:
+                imported_payee = f"{base_payee} [#{voucher_id}]"
+            else:
+                imported_payee = f"Voucher #{voucher_id}"
+            
             # Prepare transaction
             transactions_to_import.append({
                 'date': voucher_date,
                 'amount': amount_cents,
                 'category_id': category_id,
                 'imported_id': imported_id,
-                'imported_payee': voucher.get('supplier', {}).get('name', '') or voucher.get('description', ''),
-                'notes': '',
+                'imported_payee': imported_payee,
+                'notes': notes,
                 'cleared': False
             })
             
@@ -176,14 +201,15 @@ def main():
         else:
             logger.info(f"   Importing {len(transactions_to_import)} transactions...")
             
-            # Bulk import
             result = actual.import_transactions(account_id, transactions_to_import)
             
-            added_ids = result.get('added', [])
-            updated_ids = result.get('updated', [])
+            added_count = len(result.get('added', []))
+            updated_count = len(result.get('updated', []))
+            skipped_count = len(result.get('skipped', []))
             
-            logger.info(f"   Added: {len(added_ids)}")
-            logger.info(f"   Updated: {len(updated_ids)}")
+            logger.info(f"   Added: {added_count}")
+            logger.info(f"   Updated: {updated_count}")
+            logger.info(f"   Skipped: {skipped_count}")
             
             # Save mappings for all imported transactions
             # Note: We'll save mappings for all since we used imported_id for deduplication

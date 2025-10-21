@@ -831,23 +831,29 @@ class ActualBudgetClient:
             amount_cents = txn_data['amount']
             
             # Check for similar transactions (amount match within 3 days)
-            date_window_start = int((txn_date - timedelta(days=3)).strftime('%Y%m%d'))
-            date_window_end = int((txn_date + timedelta(days=3)).strftime('%Y%m%d'))
-            
-            stmt = select(Transactions).where(
-                and_(
-                    Transactions.acct == account_id,
-                    Transactions.amount == amount_cents,
-                    Transactions.date >= date_window_start,
-                    Transactions.date <= date_window_end,
-                    Transactions.tombstone == 0
+            # ONLY for reconciliation: match transactions without imported_id
+            similar_txn = None
+            if imported_id:  # Only try to reconcile if we have an imported_id to assign
+                date_window_start = int((txn_date - timedelta(days=3)).strftime('%Y%m%d'))
+                date_window_end = int((txn_date + timedelta(days=3)).strftime('%Y%m%d'))
+                
+                stmt = select(Transactions).where(
+                    and_(
+                        Transactions.acct == account_id,
+                        Transactions.amount == amount_cents,
+                        Transactions.date >= date_window_start,
+                        Transactions.date <= date_window_end,
+                        Transactions.financial_id.is_(None),  # Only match txns WITHOUT imported_id
+                        Transactions.tombstone == 0
+                    )
                 )
-            )
-            similar_txns = list(self._actual.session.execute(stmt).scalars())
+                similar_txns = list(self._actual.session.execute(stmt).scalars())
+                if similar_txns:
+                    similar_txn = similar_txns[0]
             
             # If we find a similar transaction without imported_id, update it
-            if similar_txns:
-                existing_txn = similar_txns[0]
+            if similar_txn:
+                existing_txn = similar_txn
                 
                 # Update the existing transaction
                 if imported_id:
