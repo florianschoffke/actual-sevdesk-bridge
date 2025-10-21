@@ -100,7 +100,7 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
     
     if not vouchers:
         logger.info("✅ No vouchers to sync")
-        return {'synced': 0, 'skipped': 0, 'failed': 0, 'validated': 0}
+        return {'synced': 0, 'skipped': 0, 'ignored': 0, 'failed': 0, 'validated': 0}
     
     # Start sync tracking
     sync_id = db.start_sync('vouchers')
@@ -142,6 +142,7 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
     valid_vouchers = []
     modified_vouchers = []
     already_synced = 0
+    ignored_count = 0
     
     with tqdm(
         total=len(vouchers), 
@@ -174,6 +175,26 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
             
             # Get positions from cache (no API call!)
             positions = positions_by_voucher.get(voucher_id, [])
+            
+            # Check if this voucher should be ignored (Geldtransit or Durchlaufende Posten)
+            if positions:
+                accounting_type_ids = [p.get('accountingType', {}).get('id') for p in positions]
+                # Skip Geldtransit (40, 81) and Durchlaufende Posten (39)
+                if any(t in ['39', '40', '81'] for t in accounting_type_ids):
+                    # Check if not already marked as ignored
+                    if not db.is_voucher_ignored(f"voucher_{voucher_id}"):
+                        # Determine reason
+                        if '39' in accounting_type_ids:
+                            reason = "Durchlaufende Posten"
+                        else:
+                            reason = "Geldtransit"
+                        
+                        if not dry_run:
+                            db.mark_voucher_ignored(f"voucher_{voucher_id}", reason)
+                    
+                    ignored_count += 1
+                    pbar.update(1)
+                    continue
             
             # Get voucher number for better identification
             voucher_number = voucher.get('voucherNumber') or voucher.get('description', '')
@@ -213,6 +234,7 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
     logger.info(f"✅ {len(valid_vouchers)} new vouchers passed validation")
     logger.info(f"🔄 {len(modified_vouchers)} modified vouchers will be updated")
     logger.info(f"⏭️  {already_synced} vouchers already synced (unchanged)")
+    logger.info(f"🚫 {ignored_count} vouchers ignored (Geldtransit/Durchlaufende Posten)")
     logger.info(f"❌ {len(validator.get_validation_errors())} vouchers failed validation")
     
     if already_synced > 0:
@@ -267,6 +289,7 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
         return {
             'synced': 0,
             'skipped': already_synced,
+            'ignored': ignored_count,
             'failed': len(validator.get_validation_errors()),
             'validated': len(valid_vouchers)
         }
@@ -275,9 +298,21 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
     total_to_process = len(valid_vouchers) + len(modified_vouchers)
     if total_to_process == 0:
         logger.info("✓ No vouchers to sync")
+        
+        # Send email notification if there are invalid vouchers
+        invalid_vouchers = db.get_invalid_vouchers()
+        if invalid_vouchers:
+            logger.info(f"📧 Sending email notification for {len(invalid_vouchers)} invalid vouchers...")
+            try:
+                email_notifier = EmailNotifier.from_config(config)
+                email_notifier.send_validation_report(invalid_vouchers)
+            except Exception as e:
+                logger.error(f"Failed to send email notification: {e}")
+        
         return {
             'synced': 0,
             'skipped': already_synced,
+            'ignored': ignored_count,
             'failed': len(validator.get_validation_errors()),
             'validated': 0
         }
@@ -509,6 +544,7 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
         'created': created,
         'updated': updated,
         'skipped': already_synced,
+        'ignored': ignored_count,
         'failed': len(validator.get_validation_errors()) + (len(valid_vouchers) - created) + (len(modified_vouchers) - updated),
         'validated': len(valid_vouchers) + len(modified_vouchers),
         'invalid': len(invalid_vouchers)

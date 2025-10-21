@@ -92,15 +92,25 @@ def sync_categories(config: 'Config', dry_run: bool = False) -> dict:
                     
                     # Check if this should be an income category and update if needed
                     is_income_cat = cc_name in config.income_categories
-                    if is_income_cat and not existing_cat['is_income']:
-                        logger.info(f"  ➡️  Updating {cc_name} to be an income category")
-                        from actual.database import Categories
-                        from sqlalchemy import select
-                        stmt = select(Categories).where(Categories.id == existing_cat['id'])
-                        cat_obj = actual._actual.session.execute(stmt).scalar_one_or_none()
-                        if cat_obj:
-                            cat_obj.is_income = 1
-                            actual._actual.session.flush()
+                    if is_income_cat:
+                        needs_update = False
+                        if not existing_cat['is_income']:
+                            logger.info(f"  ➡️  Setting {cc_name} as income category")
+                            needs_update = True
+                        if existing_cat.get('group_id') != income_group:
+                            logger.info(f"  ➡️  Moving {cc_name} to Income group")
+                            needs_update = True
+                        
+                        if needs_update:
+                            from actual.database import Categories
+                            from sqlalchemy import select
+                            stmt = select(Categories).where(Categories.id == existing_cat['id'])
+                            cat_obj = actual._actual.session.execute(stmt).scalar_one_or_none()
+                            if cat_obj:
+                                cat_obj.is_income = 1
+                                cat_obj.cat_group = income_group  # Move to Income group (field is cat_group, not group_id)
+                                actual._actual.session.flush()
+                                actual._actual.commit()  # Commit the changes immediately
                     
                     # Enable carryover for this category's first month with transactions
                     logger.info(f"  🔄 Enabling carryover for {cc_name}")

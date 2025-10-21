@@ -351,6 +351,49 @@ class Database:
         
         return deleted
     
+    def mark_voucher_ignored(
+        self,
+        sevdesk_id: str,
+        reason: str
+    ):
+        """
+        Mark a voucher as ignored (won't be synced to Actual Budget).
+        
+        Args:
+            sevdesk_id: SevDesk voucher ID
+            reason: Reason for ignoring (e.g., "Geldtransit", "Durchlaufende Posten")
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO transaction_mappings
+            (sevdesk_id, actual_id, ignored, synced_at)
+            VALUES (?, ?, 1, ?)
+        ''', (
+            sevdesk_id,
+            reason,  # Store reason in actual_id field
+            datetime.now().isoformat()
+        ))
+        
+        conn.commit()
+        conn.close()
+    
+    def is_voucher_ignored(self, sevdesk_id: str) -> bool:
+        """Check if a voucher is marked as ignored."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT ignored FROM transaction_mappings
+            WHERE sevdesk_id = ? AND ignored = 1
+        ''', (sevdesk_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        return result is not None
+    
     # Failed Voucher Methods
     
     def save_failed_voucher(
@@ -587,8 +630,8 @@ class Database:
                 cost_center.get('id') if cost_center else None,
                 cost_center.get('name') if cost_center else None,
                 voucher.get('supplier', {}).get('name') if voucher.get('supplier') else None,
-                voucher.get('createTimestamp'),
-                voucher.get('updateTimestamp'),
+                voucher.get('create'),  # SevDesk uses 'create' not 'createTimestamp'
+                voucher.get('update'),  # SevDesk uses 'update' not 'updateTimestamp'
                 json.dumps(voucher),
                 now
             ))

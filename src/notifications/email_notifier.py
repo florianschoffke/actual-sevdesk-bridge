@@ -119,6 +119,37 @@ class EmailNotifier:
             msg['To'] = self.to_address
             msg['Subject'] = f'Voucher Validation Failed - {len(invalid_vouchers)} Invalid Vouchers'
             
+            # Create table preview (first 10 vouchers)
+            preview_vouchers = invalid_vouchers[:10]
+            table_lines = []
+            table_lines.append("")
+            table_lines.append("Invalid Vouchers:")
+            table_lines.append("-" * 100)
+            
+            for v in preview_vouchers:
+                voucher_id = v.get('id', '')
+                voucher_num = v.get('voucher_number', 'N/A')
+                date = v.get('voucher_date', 'N/A')
+                amount = v.get('amount', 0)
+                supplier = v.get('supplier_name', 'N/A') or 'N/A'
+                reason = v.get('validation_reason', 'N/A')
+                
+                # Format with proper alignment
+                table_lines.append(f"  Voucher:  {voucher_num}")
+                table_lines.append(f"  ID:       {voucher_id}")
+                table_lines.append(f"  Link:     https://my.sevdesk.de/ex/detail/id/{voucher_id}")
+                table_lines.append(f"  Date:     {date}")
+                table_lines.append(f"  Amount:   €{amount:,.2f}")
+                table_lines.append(f"  Supplier: {supplier}")
+                table_lines.append(f"  Reason:   {reason}")
+                table_lines.append("-" * 100)
+            
+            if len(invalid_vouchers) > 10:
+                table_lines.append(f"\n... and {len(invalid_vouchers) - 10} more voucher(s).")
+                table_lines.append("See attached CSV for complete list.")
+            
+            table_preview = "\n".join(table_lines)
+            
             # Email body
             body = f"""
 Voucher validation completed with failures.
@@ -127,12 +158,14 @@ Summary:
 - Total invalid vouchers: {len(invalid_vouchers)}
 - Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-Please review the attached CSV file for details on which vouchers need correction.
+{table_preview}
 
 Common validation issues:
 - Regular vouchers missing cost center assignment
 - Geldtransit vouchers incorrectly assigned cost centers
 - Other accounting type mismatches
+
+Please review the attached CSV file for complete details on which vouchers need correction.
 
 The system will automatically re-validate these vouchers on the next sync once corrected.
 """
@@ -151,11 +184,14 @@ The system will automatically re-validate these vouchers on the next sync once c
             # Send email
             logger.info(f"Sending validation report to {self.to_address}...")
             
-            if self.use_tls:
-                server = smtplib.SMTP(self.smtp_host, self.smtp_port)
+            # Port 465 requires SMTP_SSL, port 587 uses SMTP with STARTTLS
+            if self.smtp_port == 465:
+                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=30)
+            elif self.use_tls:
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30)
                 server.starttls()
             else:
-                server = smtplib.SMTP(self.smtp_host, self.smtp_port)
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30)
             
             server.login(self.smtp_username, self.smtp_password)
             server.send_message(msg)

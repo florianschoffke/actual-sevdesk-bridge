@@ -110,12 +110,15 @@ def main():
                 logger.info(f"📊 Voucher limit: {limit}")
             logger.info("")
             
+            # Note: Account sync removed - using single account approach
+            # User will manually manage accounts in Actual Budget UI
+            
             # Stage 1: Categories
             result1 = sync_categories(config, dry_run=args.dry_run)
             logger.info(f"📊 Stage 1 Result: {result1}")
             logger.info("")
             
-            # Stage 2: Vouchers
+            # Stage 2: Vouchers (excludes Geldtransit and Durchlaufende Posten)
             result2 = sync_vouchers(
                 config,
                 limit=limit,
