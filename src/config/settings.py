@@ -37,7 +37,6 @@ class Config:
         
         # Sync Configuration
         self.actual_account_name = os.getenv('ACTUAL_ACCOUNT_NAME', 'EGB Funds')
-        self.sync_days_back = int(os.getenv('SYNC_DAYS_BACK', '90'))
         self.sync_status = os.getenv('SYNC_STATUS')  # Can be None for all statuses
         if self.sync_status:
             self.sync_status = int(self.sync_status)

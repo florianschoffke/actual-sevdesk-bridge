@@ -20,7 +20,6 @@ services:
       
       # Sync Configuration
       - ACTUAL_ACCOUNT_NAME=${ACTUAL_ACCOUNT_NAME:-EGB Funds}
-      - SYNC_DAYS_BACK=${SYNC_DAYS_BACK:-90}
       
       # Email Configuration (optional)
       - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
