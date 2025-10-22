@@ -56,6 +56,10 @@ class Config:
         else:
             self.income_categories = default_income_categories
         
+        # Sync Schedule (cron format: "minute hour day month day_of_week")
+        # Default: every hour (for backwards compatibility)
+        self.sync_schedule = os.getenv('SYNC_SCHEDULE', '0 * * * *')
+        
         # Logging
         self.log_level = os.getenv('LOG_LEVEL', 'INFO')
         
