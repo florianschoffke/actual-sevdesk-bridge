@@ -142,7 +142,19 @@ sudo docker rm actual-sevdesk-bridge
 ```
 
 ### Run Manual Sync:
+
+**Restart Container (Recommended):**
 ```bash
+# Restart container to trigger startup sync
+sudo docker restart actual-sevdesk-bridge
+
+# Watch the sync progress
+sudo docker logs -f actual-sevdesk-bridge
+```
+
+**Direct Execution:**
+```bash
+# Run one-time sync without restart
 sudo docker exec actual-sevdesk-bridge python3 main.py sync-all
 ```
 
@@ -232,15 +244,17 @@ sudo docker logs actual-sevdesk-bridge
 
 ## 📋 Sync Schedule
 
-Default: Every hour (3600 seconds)
+The container uses cron expressions for scheduling. Default schedule depends on your `SYNC_SCHEDULE` environment variable.
 
-To change:
-1. Stop container
-2. Edit the command's `sleep` value:
-   - `sleep 1800` = 30 minutes
-   - `sleep 7200` = 2 hours  
-   - `sleep 86400` = 24 hours (daily)
-3. Recreate container with new command
+**Behavior:**
+- ✅ **Startup Sync**: Runs immediately when container starts
+- 📅 **Scheduled Sync**: Runs according to cron schedule
+- 🔄 **Manual Sync**: Restart container anytime to trigger sync
+
+**Cron Schedule Examples:**
+- `0 18 * * 2` = Every Tuesday at 6:00 PM (current setting)
+- `0 * * * *` = Every hour
+- `0 9,17 * * 1-5` = Weekdays at 9 AM and 5 PM
 
 ## ✅ Verification
 

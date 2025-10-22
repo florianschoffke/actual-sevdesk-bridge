@@ -27,7 +27,7 @@ def run_sync():
     try:
         config = get_config()
         
-        logger.info("🔄 Starting scheduled sync cycle...")
+        logger.info("🔄 Starting sync cycle...")
         logger.info("")
         
         # Stage 1: Categories
@@ -57,8 +57,14 @@ def main():
         
         logger.info("🚀 Starting Actual-SevDesk Bridge (Scheduled)")
         logger.info(f"📋 Schedule: {config.sync_schedule}")
+        logger.info("")
         
-        # Create and start scheduler
+        # Run initial sync on startup
+        logger.info("🔄 Running startup sync...")
+        run_sync()
+        logger.info("")
+        
+        # Create and start scheduler for future runs
         scheduler = CronScheduler(config.sync_schedule)
         scheduler.run_scheduled(run_sync)
         
