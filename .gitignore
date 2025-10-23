@@ -58,15 +58,18 @@ temp/
 
 # Generated reports
 invalid_vouchers.md
+invoices_preview.md
+preview_*.md
 vouchers_missing_cost_centers.csv
 vouchers_backup.csv
 
-# Test files
-test_*.py
-*_test.py
-debug_*.py
-check_*.py
-fix_*.py
+# Test/debug/utility files (root level only - scripts/ folder is tracked)
+/test_*.py
+/*_test.py
+/debug_*.py
+/check_*.py
+/fix_*.py
+/preview_*.py
 
 # Docker image exports
 docker-image/
