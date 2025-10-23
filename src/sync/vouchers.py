@@ -415,12 +415,14 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
                 # Use voucher ID as imported_id for deduplication
                 imported_id = f"sevdesk_voucher_{voucher_id}"
                 
-                # Create notes with voucher info for better tracking
-                notes_parts = []
-                if voucher_number:
-                    notes_parts.append(f"Voucher: {voucher_number}")
-                notes_parts.append(f"ID: {voucher_id}")
-                notes = " | ".join(notes_parts)
+                # Create notes with voucher info for better tracking (if enabled)
+                notes = ""
+                if config.include_transaction_notes:
+                    notes_parts = []
+                    if voucher_number:
+                        notes_parts.append(f"Voucher: {voucher_number}")
+                    notes_parts.append(f"ID: {voucher_id}")
+                    notes = " | ".join(notes_parts)
                 
                 # Create unique imported_payee by appending voucher ID to prevent deduplication
                 base_payee = voucher.get('supplier', {}).get('name', '') or voucher.get('description', '') or ''

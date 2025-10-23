@@ -556,6 +556,7 @@ class ActualBudgetClient:
         # Commit and sync to server
         print(f"📤 Uploading transaction update to server...")
         self._actual.commit()
+        self._actual.sync()  # Explicitly sync to push changes to server
         
         return {
             'id': transaction_id,
@@ -753,7 +754,8 @@ class ActualBudgetClient:
             self._actual.session.flush()
             print(f"📤 Committing {len(bulk_updates)} transaction updates to local database...")
             print(f"📤 Uploading {len(bulk_updates)} transaction updates to server...")
-            self._actual.commit()  # This syncs to server
+            self._actual.commit()
+            self._actual.sync()  # Explicitly sync to push changes to server
             print(f"✅ Upload complete!")
         
         return result_transactions

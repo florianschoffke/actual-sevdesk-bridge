@@ -41,6 +41,9 @@ class Config:
         if self.sync_status:
             self.sync_status = int(self.sync_status)
         
+        # Transaction notes - whether to include voucher info in notes
+        self.include_transaction_notes = os.getenv('INCLUDE_TRANSACTION_NOTES', 'false').lower() == 'true'
+        
         # Income categories - categories that should be marked as income
         # Can be configured via INCOME_CATEGORIES env var (comma-separated)
         default_income_categories = [

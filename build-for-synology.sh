@@ -3,6 +3,9 @@
 
 set -e
 
+echo "🧹 Cleaning up old Docker images..."
+docker image prune -f
+
 echo "🐳 Building Docker image for Synology (AMD64 architecture)..."
 
 # Build the image for AMD64/x86_64 architecture (Synology NAS compatibility)
