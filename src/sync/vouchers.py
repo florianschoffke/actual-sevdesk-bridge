@@ -74,14 +74,26 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
         # Fetch invalid vouchers individually
         invalid_vouchers = []
         if invalid_ids:
-            logger.info("� Re-fetching previously invalid vouchers...")
-            for voucher_id in tqdm(invalid_ids, desc="Fetching invalid vouchers", unit="voucher"):
+            logger.info("🔄 Re-fetching previously invalid vouchers...")
+            total_invalid = len(invalid_ids)
+            last_logged = -10
+            
+            for idx, voucher_id in enumerate(invalid_ids, 1):
                 try:
                     voucher = sevdesk.get_voucher(voucher_id)
                     if voucher:
                         invalid_vouchers.append(voucher)
                 except Exception as e:
                     logger.warning(f"Failed to fetch voucher {voucher_id}: {e}")
+                
+                # Log progress every 10%
+                percent = int((idx / total_invalid) * 100)
+                if percent >= last_logged + 10:
+                    logger.info(f"🔄 Fetching invalid vouchers: {percent}% ({idx}/{total_invalid})")
+                    last_logged = percent
+            
+            if total_invalid > 0:
+                logger.info(f"🔄 Fetching invalid vouchers: 100% ({total_invalid}/{total_invalid})")
         
         # Combine updated and invalid vouchers
         vouchers = updated_vouchers + invalid_vouchers
