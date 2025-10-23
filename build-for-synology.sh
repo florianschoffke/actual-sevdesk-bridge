@@ -20,9 +20,14 @@ docker save -o docker-image/actual-sevdesk-bridge.tar actual-sevdesk-bridge:late
 echo "🗜️  Compressing image..."
 gzip -f docker-image/actual-sevdesk-bridge.tar
 
+# Copy to Downloads folder
+echo "📋 Copying to Downloads folder..."
+cp -f docker-image/actual-sevdesk-bridge.tar.gz ~/Downloads/
+
 echo "✅ Image exported successfully!"
 echo ""
 echo "📁 File location: docker-image/actual-sevdesk-bridge.tar.gz"
+echo "📁 Also copied to: ~/Downloads/actual-sevdesk-bridge.tar.gz"
 echo "📊 File size: $(du -h docker-image/actual-sevdesk-bridge.tar.gz | cut -f1)"
 echo ""
 echo "📤 Next steps:"

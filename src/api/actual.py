@@ -552,6 +552,9 @@ class ActualBudgetClient:
         # Execute update
         update_sql = f"UPDATE transactions SET {', '.join(updates)} WHERE id = :id AND tombstone = 0"
         self._actual.session.execute(text(update_sql), params)
+        
+        # Commit and sync to server
+        print(f"📤 Uploading transaction update to server...")
         self._actual.commit()
         
         return {
@@ -749,9 +752,8 @@ class ActualBudgetClient:
             self._actual.session.bulk_update_mappings(Transactions, bulk_updates)
             self._actual.session.flush()
             print(f"📤 Committing {len(bulk_updates)} transaction updates to local database...")
-            self._actual.commit()
             print(f"📤 Uploading {len(bulk_updates)} transaction updates to server...")
-            self._actual.upload_budget()
+            self._actual.commit()  # This syncs to server
             print(f"✅ Upload complete!")
         
         return result_transactions
