@@ -174,22 +174,15 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
         # Get positions from cache (no API call!)
         positions = positions_by_voucher.get(voucher_id, [])
         
-        # Check if this voucher should be ignored (Geldtransit or Durchlaufende Posten)
+        # Check if this voucher should be ignored (Geldtransit or Durchlaufende Posten WITHOUT cost centre)
         if positions:
             accounting_type_ids = [p.get('accountingType', {}).get('id') for p in positions]
-            # Skip Geldtransit (40, 81) and Durchlaufende Posten (39)
-            if any(t in ['39', '40', '81'] for t in accounting_type_ids):
-                # Check if not already marked as ignored
+            
+            # Check for Geldtransit (40, 81) - always ignore these
+            if any(t in ['40', '81'] for t in accounting_type_ids):
                 if not db.is_voucher_ignored(f"voucher_{voucher_id}"):
-                    # Determine reason
-                    if '39' in accounting_type_ids:
-                        reason = "Durchlaufende Posten"
-                    else:
-                        reason = "Geldtransit"
-                    
                     if not dry_run:
-                        db.mark_voucher_ignored(f"voucher_{voucher_id}", reason)
-                
+                        db.mark_voucher_ignored(f"voucher_{voucher_id}", "Geldtransit")
                 ignored_count += 1
                 
                 # Log progress
@@ -198,6 +191,43 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
                     logger.info(f"✅ Validating: {percent}% ({idx}/{total})")
                     last_logged_percent = percent
                 continue
+            
+            # Check for Durchlaufende Posten (39) - must have cost centre
+            if '39' in accounting_type_ids:
+                # Check if voucher has a cost centre
+                cost_centre = voucher.get('costCentre')
+                has_cost_centre = cost_centre and cost_centre.get('id')
+                
+                if not has_cost_centre:
+                    # No cost centre - mark as erroneous
+                    voucher_number = voucher.get('voucherNumber') or voucher.get('description', '')
+                    failure_reason = "Durchlaufende Posten requires a cost centre"
+                    
+                    if not dry_run:
+                        # Mark validation status
+                        db.mark_voucher_validation(
+                            voucher_id=voucher_id,
+                            is_valid=False,
+                            reason=failure_reason
+                        )
+                        
+                        # Save as failed voucher
+                        db.save_failed_voucher(
+                            voucher_id=voucher_id,
+                            voucher_date=voucher.get('voucherDate'),
+                            amount=float(voucher.get('sumNet', 0)),
+                            voucher_type=voucher.get('voucherType'),
+                            failure_reason=failure_reason,
+                            voucher_number=voucher_number
+                        )
+                    
+                    # Log progress
+                    percent = int((idx / total) * 100)
+                    if percent >= last_logged_percent + 10:
+                        logger.info(f"✅ Validating: {percent}% ({idx}/{total})")
+                        last_logged_percent = percent
+                    continue
+                # else: Has cost centre - proceed with validation
         
         # Get voucher number for better identification
         voucher_number = voucher.get('voucherNumber') or voucher.get('description', '')
@@ -498,51 +528,53 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
                 logger.warning("Falling back to individual transaction updates...")
                 
                 # Fallback: Update one by one
-                with tqdm(
-                    total=len(modified_vouchers),
-                    desc="Updating transactions (fallback)",
-                    unit="txn",
-                    bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]',
-                    leave=True,
-                    dynamic_ncols=True
-                ) as pbar:
-                    for voucher, positions, result, existing_mapping in modified_vouchers:
-                        try:
-                            voucher_id = str(voucher['id'])
-                            voucher_date_str = voucher['voucherDate']
-                            voucher_date = datetime.fromisoformat(voucher_date_str).date()
-                            
-                            amount_eur = float(voucher['sumGross'])
-                            credit_debit = voucher.get('creditDebit', 'D')
-                            amount_cents = int(amount_eur * 100)
-                            if credit_debit == 'C':
-                                amount_cents = -amount_cents
-                            
-                            cc = voucher.get('costCentre', {})
-                            cc_id = str(cc.get('id', ''))
-                            category_id = category_mappings.get(cc_id) if cc_id else None
-                            
-                            actual.update_transaction(
-                                transaction_id=existing_mapping['actual_id'],
-                                date=voucher_date,
-                                amount=amount_cents,
-                                category_id=category_id
-                            )
-                            
-                            db.save_transaction_mapping(
-                                sevdesk_id=f"voucher_{voucher_id}",
-                                actual_id=existing_mapping['actual_id'],
-                                sevdesk_value_date=voucher_date_str,
-                                sevdesk_amount=amount_eur,
-                                sevdesk_update_timestamp=voucher.get('update')
-                            )
-                            
-                            updated += 1
-                            pbar.update(1)
-                            
-                        except Exception as e2:
-                            logger.error(f"Failed to update transaction for voucher {voucher_id}: {str(e2)}")
-                            pbar.update(1)
+                total_updates = len(modified_vouchers)
+                last_logged = -10
+                
+                for idx, (voucher, positions, result, existing_mapping) in enumerate(modified_vouchers, 1):
+                    try:
+                        voucher_id = str(voucher['id'])
+                        voucher_date_str = voucher['voucherDate']
+                        voucher_date = datetime.fromisoformat(voucher_date_str).date()
+                        
+                        amount_eur = float(voucher['sumGross'])
+                        credit_debit = voucher.get('creditDebit', 'D')
+                        amount_cents = int(amount_eur * 100)
+                        if credit_debit == 'C':
+                            amount_cents = -amount_cents
+                        
+                        cc = voucher.get('costCentre', {})
+                        cc_id = str(cc.get('id', ''))
+                        category_id = category_mappings.get(cc_id) if cc_id else None
+                        
+                        actual.update_transaction(
+                            transaction_id=existing_mapping['actual_id'],
+                            date=voucher_date,
+                            amount=amount_cents,
+                            category_id=category_id
+                        )
+                        
+                        db.save_transaction_mapping(
+                            sevdesk_id=f"voucher_{voucher_id}",
+                            actual_id=existing_mapping['actual_id'],
+                            sevdesk_value_date=voucher_date_str,
+                            sevdesk_amount=amount_eur,
+                            sevdesk_update_timestamp=voucher.get('update')
+                        )
+                        
+                        updated += 1
+                        
+                        # Log progress every 10%
+                        percent = int((idx / total_updates) * 100)
+                        if percent >= last_logged + 10:
+                            logger.info(f"🔄 Updating: {percent}% ({idx}/{total_updates})")
+                            last_logged = percent
+                        
+                    except Exception as e2:
+                        logger.error(f"Failed to update transaction for voucher {voucher_id}: {str(e2)}")
+                
+                if total_updates > 0:
+                    logger.info(f"🔄 Updating: 100% ({total_updates}/{total_updates})")
         
         logger.info(f"✓ Created {created} new transactions")
         logger.info(f"✓ Updated {updated} modified transactions")
