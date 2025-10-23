@@ -38,18 +38,21 @@ def main():
     # sync-categories command
     categories_parser = subparsers.add_parser('sync-categories', help='Sync cost centers to categories')
     categories_parser.add_argument('--dry-run', action='store_true', help='Show what would be synced without making changes')
+    categories_parser.add_argument('--reconcile', action='store_true', help='Check for deleted categories and recreate them')
     
     # sync-vouchers command
     vouchers_parser = subparsers.add_parser('sync-vouchers', help='Sync vouchers to transactions')
     vouchers_parser.add_argument('--dry-run', action='store_true', help='Validate without making changes')
     vouchers_parser.add_argument('--limit', type=int, default=20, help='Maximum number of vouchers to process (default: 20)')
     vouchers_parser.add_argument('--full', action='store_true', help='Full sync (ignore last sync timestamp)')
+    vouchers_parser.add_argument('--reconcile', action='store_true', help='Check for deleted/unbooked vouchers and remove transactions')
     
     # sync-all command  
     all_parser = subparsers.add_parser('sync-all', help='Sync categories and vouchers')
     all_parser.add_argument('--dry-run', action='store_true', help='Show what would be synced without making changes')
     all_parser.add_argument('--limit', type=int, help='Limit number of vouchers to sync (default: unlimited)')
     all_parser.add_argument('--voucher-limit', type=int, help='Alias for --limit (deprecated)')
+    all_parser.add_argument('--reconcile', action='store_true', help='Enable reconciliation for both categories and transactions')
     
     # reset command
     reset_parser = subparsers.add_parser('reset', help='Reset transaction sync state')
@@ -90,7 +93,7 @@ def main():
             logger.info(f"📊 Result: {result}")
         
         elif args.command == 'sync-categories':
-            result = sync_categories(config, dry_run=args.dry_run)
+            result = sync_categories(config, dry_run=args.dry_run, reconcile=args.reconcile)
             logger.info(f"📊 Result: {result}")
         
         elif args.command == 'sync-vouchers':
@@ -98,23 +101,28 @@ def main():
                 config,
                 limit=args.limit,
                 dry_run=args.dry_run,
-                full_sync=args.full
+                full_sync=args.full,
+                reconcile=args.reconcile
             )
             logger.info(f"📊 Result: {result}")
         
         elif args.command == 'sync-all':
             # Use --limit, fallback to --voucher-limit for backwards compatibility
             limit = args.limit or args.voucher_limit
+            reconcile = getattr(args, 'reconcile', False)
+            
             logger.info("🚀 Starting complete synchronization...")
             if limit:
                 logger.info(f"📊 Voucher limit: {limit}")
+            if reconcile:
+                logger.info("🔄 Reconciliation enabled")
             logger.info("")
             
             # Note: Account sync removed - using single account approach
             # User will manually manage accounts in Actual Budget UI
             
             # Stage 1: Categories
-            result1 = sync_categories(config, dry_run=args.dry_run)
+            result1 = sync_categories(config, dry_run=args.dry_run, reconcile=reconcile)
             logger.info(f"📊 Stage 1 Result: {result1}")
             logger.info("")
             
@@ -122,7 +130,8 @@ def main():
             result2 = sync_vouchers(
                 config,
                 limit=limit,
-                dry_run=args.dry_run
+                dry_run=args.dry_run,
+                reconcile=reconcile
             )
             logger.info(f"📊 Stage 2 Result: {result2}")
             logger.info("")

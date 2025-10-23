@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.config import get_config
-from src.sync import sync_categories, sync_vouchers
+from src.sync import sync_categories, sync_vouchers, sync_invoices
 from src.scheduler import CronScheduler
 
 
@@ -21,23 +21,28 @@ def setup_logging(level: str = 'INFO'):
 
 
 def run_sync():
-    """Run a complete sync cycle."""
+    """Run a complete sync cycle with reconciliation."""
     logger = logging.getLogger(__name__)
     
     try:
         config = get_config()
         
-        logger.info("🔄 Starting sync cycle...")
+        logger.info("🔄 Starting sync cycle (with reconciliation)...")
         logger.info("")
         
-        # Stage 1: Categories
-        result1 = sync_categories(config, dry_run=False)
+        # Stage 1: Categories (with reconciliation to detect deleted categories)
+        result1 = sync_categories(config, dry_run=False, reconcile=True)
         logger.info(f"📊 Categories Result: {result1}")
         logger.info("")
         
-        # Stage 2: Vouchers (no limit - full sync)
-        result2 = sync_vouchers(config, limit=None, dry_run=False)
+        # Stage 2: Vouchers (no limit - full sync, with reconciliation to detect deleted vouchers)
+        result2 = sync_vouchers(config, limit=None, dry_run=False, reconcile=True)
         logger.info(f"📊 Vouchers Result: {result2}")
+        logger.info("")
+        
+        # Stage 3: Invoices (no limit - full sync, with reconciliation)
+        result3 = sync_invoices(config, limit=None, dry_run=False, reconcile=True)
+        logger.info(f"📊 Invoices Result: {result3}")
         logger.info("")
         
         logger.info("🎉 Sync cycle completed successfully!")

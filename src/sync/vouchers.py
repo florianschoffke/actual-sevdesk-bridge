@@ -17,7 +17,7 @@ from src.voucher_validator import VoucherValidator
 from src.notifications import EmailNotifier
 
 
-def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, full_sync: bool = False) -> dict:
+def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, full_sync: bool = False, reconcile: bool = False) -> dict:
     """
     Stage 3: Sync vouchers from SevDesk to Actual Budget transactions.
     
@@ -29,9 +29,10 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
         limit: Maximum number of vouchers to sync (None = no limit)
         dry_run: If True, only validate and show what would be synced
         full_sync: If True, ignore last sync and fetch all vouchers
+        reconcile: If True, check for deleted/unbooked vouchers and remove their transactions
     
     Returns:
-        Dict with sync statistics: {'synced': int, 'skipped': int, 'failed': int, 'validated': int}
+        Dict with sync statistics: {'synced': int, 'skipped': int, 'failed': int, 'validated': int, 'deleted': int}
     """
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
@@ -611,7 +612,8 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
         except Exception as e:
             logger.error(f"Failed to send email notification: {e}")
     
-    return {
+    # Prepare result
+    result = {
         'synced': created + updated,
         'created': created,
         'updated': updated,
@@ -619,5 +621,28 @@ def sync_vouchers(config: 'Config', limit: int = None, dry_run: bool = False, fu
         'ignored': ignored_count,
         'failed': len(validator.get_validation_errors()) + (len(valid_vouchers) - created) + (len(modified_vouchers) - updated),
         'validated': len(valid_vouchers) + len(modified_vouchers),
-        'invalid': len(invalid_vouchers)
+        'invalid': len(invalid_vouchers),
+        'deleted': 0
     }
+    
+    # Reconciliation phase: check for deleted/unbooked vouchers
+    if reconcile:
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("Phase 2: Transaction Reconciliation")
+        logger.info("=" * 60)
+        
+        from .reconciliation import reconcile_transactions
+        
+        # Open new connection for reconciliation
+        with ActualBudgetClient(
+            config.actual_url,
+            config.actual_password,
+            config.actual_file_id,
+            config.actual_verify_ssl
+        ) as actual:
+            reconcile_result = reconcile_transactions(sevdesk, actual, db, dry_run)
+            result['deleted'] = reconcile_result['deleted']
+            result['reconcile_errors'] = reconcile_result.get('errors', 0)
+    
+    return result

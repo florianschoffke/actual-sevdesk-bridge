@@ -250,4 +250,139 @@ class SevDeskClient:
             'voucher[objectName]': 'Voucher'
         })
         return response.get('objects', [])
-
+    
+    # Invoice methods
+    
+    def get_invoices(
+        self,
+        status: Optional[int] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        Fetch invoices (Rechnungen) from SevDesk.
+        
+        Args:
+            status: Filter by status (100=Draft, 200=Sent, 1000=Paid)
+            date_from: Start date in YYYY-MM-DD format
+            date_to: End date in YYYY-MM-DD format
+            limit: Maximum number of invoices to fetch
+        
+        Returns:
+            List of invoice objects
+        """
+        params = {'limit': 100, 'offset': 0}
+        
+        if status is not None:
+            params['status'] = status
+        if date_from:
+            params['startDate'] = date_from
+        if date_to:
+            params['endDate'] = date_to
+        
+        all_invoices = []
+        
+        while True:
+            response = self._request('GET', '/Invoice', params=params)
+            invoices = response.get('objects', [])
+            
+            if not invoices:
+                break
+            
+            all_invoices.extend(invoices)
+            
+            # Stop if we've reached the limit
+            if limit and len(all_invoices) >= limit:
+                all_invoices = all_invoices[:limit]
+                break
+            
+            # Stop if this was the last page
+            if len(invoices) < params['limit']:
+                break
+            
+            params['offset'] += params['limit']
+        
+        return all_invoices
+    
+    def get_invoice(self, invoice_id: str) -> Optional[Dict]:
+        """
+        Fetch a single invoice by ID.
+        
+        Args:
+            invoice_id: ID of the invoice
+        
+        Returns:
+            Invoice object or None if not found
+        """
+        try:
+            response = self._request('GET', f'/Invoice/{invoice_id}')
+            objects = response.get('objects', [])
+            return objects[0] if objects else None
+        except requests.HTTPError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+    
+    def get_invoice_positions(self, invoice_id: str) -> List[Dict]:
+        """
+        Fetch positions (line items) for an invoice.
+        
+        Args:
+            invoice_id: ID of the invoice
+        
+        Returns:
+            List of invoice position objects
+        """
+        params = {
+            'invoice[id]': invoice_id,
+            'invoice[objectName]': 'Invoice',
+            'limit': 100
+        }
+        response = self._request('GET', '/InvoicePos', params=params)
+        return response.get('objects', [])
+    
+    def get_invoice_positions_batch(self, invoice_ids: List[str], show_progress: bool = False) -> Dict[str, List[Dict]]:
+        """
+        Fetch positions for multiple invoices efficiently.
+        
+        Args:
+            invoice_ids: List of invoice IDs
+            show_progress: If True, show a progress bar
+        
+        Returns:
+            Dictionary mapping invoice_id -> list of position objects
+        """
+        if not invoice_ids:
+            return {}
+        
+        positions_by_invoice = {}
+        
+        # Temporarily disable rate limiting for batch operation
+        original_delay = self.rate_limit_delay
+        self.rate_limit_delay = 0.01  # Minimal delay (10ms instead of 100ms)
+        
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            total = len(invoice_ids)
+            last_logged_percent = -10
+            
+            for idx, invoice_id in enumerate(invoice_ids, 1):
+                positions_by_invoice[invoice_id] = self.get_invoice_positions(invoice_id)
+                
+                if show_progress:
+                    percent = int((idx / total) * 100)
+                    # Log every 10%
+                    if percent >= last_logged_percent + 10:
+                        logger.info(f"📥 Fetching invoice positions: {percent}% ({idx}/{total})")
+                        last_logged_percent = percent
+            
+            if show_progress and total > 0:
+                logger.info(f"📥 Fetching invoice positions: 100% ({total}/{total})")
+        finally:
+            # Restore original rate limiting
+            self.rate_limit_delay = original_delay
+        
+        return positions_by_invoice

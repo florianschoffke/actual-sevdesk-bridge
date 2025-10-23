@@ -144,6 +144,81 @@ class Database:
             ON voucher_position_cache(voucher_id)
         ''')
         
+        # Invoice mappings (Invoices -> Actual Transactions)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS invoice_mappings (
+                sevdesk_id TEXT PRIMARY KEY,
+                actual_id TEXT NOT NULL,
+                sevdesk_invoice_date TEXT,
+                sevdesk_amount REAL,
+                sevdesk_update_timestamp TEXT,
+                synced_at TEXT NOT NULL,
+                ignored INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Failed invoices (invoices that failed validation)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS failed_invoices (
+                sevdesk_invoice_id TEXT PRIMARY KEY,
+                invoice_number TEXT,
+                invoice_date TEXT,
+                amount REAL,
+                failure_reason TEXT NOT NULL,
+                failed_at TEXT NOT NULL,
+                retry_count INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Invoice cache (stores invoice metadata)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS invoice_cache (
+                id TEXT PRIMARY KEY,
+                invoice_number TEXT,
+                invoice_date TEXT,
+                status TEXT,
+                amount REAL,
+                cost_center_id TEXT,
+                cost_center_name TEXT,
+                contact_name TEXT,
+                create_timestamp TEXT,
+                update_timestamp TEXT,
+                invoice_data TEXT,
+                cached_at TEXT NOT NULL,
+                is_valid INTEGER DEFAULT NULL,
+                validation_reason TEXT,
+                last_validated_at TEXT
+            )
+        ''')
+        
+        # Create index on update_timestamp for efficient incremental queries
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_invoice_update 
+            ON invoice_cache(update_timestamp)
+        ''')
+        
+        # Invoice positions cache
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS invoice_position_cache (
+                id TEXT PRIMARY KEY,
+                invoice_id TEXT NOT NULL,
+                cost_center_id TEXT,
+                cost_center_name TEXT,
+                sum_net REAL,
+                tax_rate REAL,
+                text TEXT,
+                position_data TEXT,
+                cached_at TEXT NOT NULL,
+                FOREIGN KEY (invoice_id) REFERENCES invoice_cache(id)
+            )
+        ''')
+        
+        # Create index on invoice_id for efficient position lookups
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_position_invoice 
+            ON invoice_position_cache(invoice_id)
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -203,6 +278,32 @@ class Database:
         
         return [dict(row) for row in rows]
     
+    def update_account_mapping(self, sevdesk_id: str, new_actual_id: str) -> bool:
+        """
+        Update an existing account mapping with a new Actual Budget account ID.
+        
+        Args:
+            sevdesk_id: SevDesk account ID
+            new_actual_id: New Actual Budget account ID
+        
+        Returns:
+            True if updated, False if not found
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE account_mappings
+            SET actual_account_id = ?
+            WHERE sevdesk_account_id = ?
+        ''', (new_actual_id, sevdesk_id))
+        
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return updated
+    
     # Category Mapping Methods
     
     def save_category_mapping(
@@ -258,6 +359,32 @@ class Database:
         conn.close()
         
         return [dict(row) for row in rows]
+    
+    def update_category_mapping(self, sevdesk_id: str, new_actual_id: str) -> bool:
+        """
+        Update an existing category mapping with a new Actual Budget category ID.
+        
+        Args:
+            sevdesk_id: SevDesk cost center ID
+            new_actual_id: New Actual Budget category ID
+        
+        Returns:
+            True if updated, False if not found
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE category_mappings
+            SET actual_category_id = ?
+            WHERE sevdesk_category_id = ?
+        ''', (new_actual_id, sevdesk_id))
+        
+        updated = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return updated
     
     # Transaction Mapping Methods
     
@@ -483,6 +610,115 @@ class Database:
         conn.close()
         
         return deleted
+    
+    # Invoice Mapping Methods
+    
+    def save_invoice_mapping(
+        self,
+        sevdesk_id: str,
+        actual_id: str,
+        invoice_date: Optional[str] = None,
+        amount: Optional[float] = None,
+        update_timestamp: Optional[str] = None
+    ):
+        """Save an invoice to transaction mapping."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO invoice_mappings
+            (sevdesk_id, actual_id, sevdesk_invoice_date, sevdesk_amount, 
+             sevdesk_update_timestamp, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            sevdesk_id,
+            actual_id,
+            invoice_date,
+            amount,
+            update_timestamp,
+            datetime.now().isoformat()
+        ))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_invoice_mapping(self, sevdesk_id: str) -> Optional[Dict]:
+        """Get invoice mapping for a SevDesk invoice ID."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM invoice_mappings
+            WHERE sevdesk_id = ?
+        ''', (sevdesk_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        return dict(row) if row else None
+    
+    def get_all_invoice_mappings(self) -> List[Dict]:
+        """Get all invoice mappings."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM invoice_mappings')
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def delete_invoice_mapping(self, sevdesk_id: str) -> bool:
+        """
+        Delete an invoice mapping.
+        
+        Args:
+            sevdesk_id: SevDesk invoice ID
+        
+        Returns:
+            True if deleted, False if not found
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM invoice_mappings WHERE sevdesk_id = ?', (sevdesk_id,))
+        deleted = cursor.rowcount > 0
+        
+        conn.commit()
+        conn.close()
+        
+        return deleted
+    
+    def mark_invoice_ignored(self, sevdesk_id: str, reason: str):
+        """Mark an invoice as ignored (won't be synced)."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE invoice_mappings
+            SET ignored = 1
+            WHERE sevdesk_id = ?
+        ''', (sevdesk_id,))
+        
+        conn.commit()
+        conn.close()
+    
+    def is_invoice_ignored(self, sevdesk_id: str) -> bool:
+        """Check if an invoice is marked as ignored."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT ignored FROM invoice_mappings
+            WHERE sevdesk_id = ?
+        ''', (sevdesk_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        
+        return bool(result and result[0]) if result else False
     
     # Sync History Methods
     

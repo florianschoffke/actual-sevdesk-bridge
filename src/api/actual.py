@@ -435,6 +435,59 @@ class ActualBudgetClient:
             'group_id': str(category.cat_group) if category.cat_group else None
         }
     
+    def delete_category(self, category_id: str) -> bool:
+        """
+        Delete a category by setting its tombstone flag.
+        
+        Args:
+            category_id: Category ID to delete
+        
+        Returns:
+            True if deleted, False if not found
+        """
+        from actual.database import Categories
+        from sqlalchemy import select
+        
+        # Find the category
+        stmt = select(Categories).where(Categories.id == category_id, Categories.tombstone == 0)
+        category = self._actual.session.execute(stmt).scalar_one_or_none()
+        
+        if not category:
+            return False
+        
+        # Set tombstone flag (soft delete)
+        category.tombstone = 1
+        self._actual.session.flush()
+        self._actual.commit()
+        return True
+    
+    def update_category_name(self, category_id: str, new_name: str) -> bool:
+        """
+        Update a category's name.
+        
+        Args:
+            category_id: Category ID to update
+            new_name: New name for the category
+        
+        Returns:
+            True if updated, False if not found
+        """
+        from actual.database import Categories
+        from sqlalchemy import select
+        
+        # Find the category
+        stmt = select(Categories).where(Categories.id == category_id, Categories.tombstone == 0)
+        category = self._actual.session.execute(stmt).scalar_one_or_none()
+        
+        if not category:
+            return False
+        
+        # Update the name
+        category.name = new_name
+        self._actual.session.flush()
+        self._actual.commit()
+        return True
+    
     def create_transaction(
         self,
         account_id: str,

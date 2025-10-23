@@ -10,7 +10,7 @@ from src.api.sevdesk import SevDeskClient
 from src.api.actual import ActualBudgetClient
 
 
-def sync_categories(config: 'Config', dry_run: bool = False) -> dict:
+def sync_categories(config: 'Config', dry_run: bool = False, reconcile: bool = False) -> dict:
     """
     Stage 2: Sync cost centers from SevDesk to Actual Budget categories.
     
@@ -21,9 +21,10 @@ def sync_categories(config: 'Config', dry_run: bool = False) -> dict:
     Args:
         config: Application configuration
         dry_run: If True, only show what would be synced without making changes
+        reconcile: If True, check for deleted categories and recreate them
     
     Returns:
-        Dict with sync statistics: {'synced': int, 'created': int}
+        Dict with sync statistics: {'synced': int, 'created': int, 'recreated': int}
     """
     logger = logging.getLogger(__name__)
     logger.info("=" * 60)
@@ -156,11 +157,28 @@ def sync_categories(config: 'Config', dry_run: bool = False) -> dict:
                 items_synced=synced
             )
             
+            # Prepare result
+            result = {'synced': synced, 'created': created, 'recreated': 0}
+            
+            # Reconciliation phase: check for deleted categories
+            if reconcile:
+                logger.info("")
+                logger.info("=" * 60)
+                logger.info("Phase 2: Category Reconciliation")
+                logger.info("=" * 60)
+                
+                from .reconciliation import reconcile_categories
+                
+                reconcile_result = reconcile_categories(sevdesk, actual, db, config, dry_run)
+                result['recreated'] = reconcile_result['recreated']
+                result['reconcile_errors'] = reconcile_result.get('errors', 0)
+            
             logger.info("=" * 60)
-            logger.info(f"✅ Stage 2 Complete: {synced} categories synced, {created} created")
+            logger.info(f"✅ Stage 2 Complete: {synced} categories synced, {created} created"
+                       + (f", {result['recreated']} recreated" if reconcile else ""))
             logger.info("=" * 60)
             
-            return {'synced': synced, 'created': created}
+            return result
             
         except Exception as e:
             db.complete_sync(

@@ -52,12 +52,13 @@ class EmailNotifier:
         self.use_tls = use_tls
         self.enabled = enabled
     
-    def create_csv_content(self, invalid_vouchers: List[Dict[str, Any]]) -> str:
+    def create_csv_content(self, invalid_items: List[Dict[str, Any]], report_type: str = 'voucher') -> str:
         """
-        Create CSV content from invalid vouchers.
+        Create CSV content from invalid items.
         
         Args:
-            invalid_vouchers: List of invalid voucher dictionaries
+            invalid_items: List of invalid item dictionaries
+            report_type: Type of report - 'voucher' or 'invoice'
             
         Returns:
             CSV content as string
@@ -65,41 +66,70 @@ class EmailNotifier:
         output = StringIO()
         writer = csv.writer(output)
         
-        # Write header
-        writer.writerow([
-            'Voucher Number',
-            'Voucher Date',
-            'Status',
-            'Amount (EUR)',
-            'Supplier',
-            'Cost Center ID',
-            'Cost Center Name',
-            'Validation Reason',
-            'Last Validated'
-        ])
+        is_invoice = report_type == 'invoice'
         
-        # Write voucher data
-        for voucher in invalid_vouchers:
+        # Write header based on type
+        if is_invoice:
             writer.writerow([
-                voucher.get('voucher_number', ''),
-                voucher.get('voucher_date', ''),
-                voucher.get('status', ''),
-                voucher.get('amount', ''),
-                voucher.get('supplier_name', ''),
-                voucher.get('cost_center_id', ''),
-                voucher.get('cost_center_name', ''),
-                voucher.get('validation_reason', ''),
-                voucher.get('last_validated_at', '')
+                'Invoice Number',
+                'Invoice Date',
+                'Status',
+                'Amount (EUR)',
+                'Contact',
+                'Cost Center ID',
+                'Cost Center Name',
+                'Validation Reason',
+                'Last Validated'
             ])
+        else:
+            writer.writerow([
+                'Voucher Number',
+                'Voucher Date',
+                'Status',
+                'Amount (EUR)',
+                'Supplier',
+                'Cost Center ID',
+                'Cost Center Name',
+                'Validation Reason',
+                'Last Validated'
+            ])
+        
+        # Write item data
+        for item in invalid_items:
+            if is_invoice:
+                writer.writerow([
+                    item.get('invoice_number', ''),
+                    item.get('invoice_date', ''),
+                    item.get('status', ''),
+                    item.get('amount', ''),
+                    item.get('contact_name', ''),
+                    item.get('cost_center_id', ''),
+                    item.get('cost_center_name', ''),
+                    item.get('validation_reason', ''),
+                    item.get('last_validated_at', '')
+                ])
+            else:
+                writer.writerow([
+                    item.get('voucher_number', ''),
+                    item.get('voucher_date', ''),
+                    item.get('status', ''),
+                    item.get('amount', ''),
+                    item.get('supplier_name', ''),
+                    item.get('cost_center_id', ''),
+                    item.get('cost_center_name', ''),
+                    item.get('validation_reason', ''),
+                    item.get('last_validated_at', '')
+                ])
         
         return output.getvalue()
     
-    def send_validation_report(self, invalid_vouchers: List[Dict[str, Any]]) -> bool:
+    def send_validation_report(self, invalid_items: List[Dict[str, Any]], report_type: str = 'voucher') -> bool:
         """
-        Send email with invalid vouchers CSV attachment.
+        Send email with invalid items CSV attachment.
         
         Args:
-            invalid_vouchers: List of invalid voucher dictionaries
+            invalid_items: List of invalid item dictionaries (vouchers or invoices)
+            report_type: Type of report - 'voucher' or 'invoice'
             
         Returns:
             True if email sent successfully, False otherwise
@@ -108,72 +138,95 @@ class EmailNotifier:
             logger.info("Email notifications disabled, skipping")
             return False
         
-        if not invalid_vouchers:
-            logger.info("No invalid vouchers to report")
+        if not invalid_items:
+            logger.info(f"No invalid {report_type}s to report")
             return True
         
         try:
+            # Determine item type and labels
+            is_invoice = report_type == 'invoice'
+            item_type = 'Invoice' if is_invoice else 'Voucher'
+            item_type_plural = 'Invoices' if is_invoice else 'Vouchers'
+            
             # Create message
             msg = MIMEMultipart()
             msg['From'] = self.from_address
             msg['To'] = self.to_address
-            msg['Subject'] = f'Voucher Validation Failed - {len(invalid_vouchers)} Invalid Vouchers'
+            msg['Subject'] = f'{item_type} Validation Failed - {len(invalid_items)} Invalid {item_type_plural}'
             
-            # Create table preview (first 10 vouchers)
-            preview_vouchers = invalid_vouchers[:10]
+            # Create table preview (first 10 items)
+            preview_items = invalid_items[:10]
             table_lines = []
             table_lines.append("")
-            table_lines.append("Invalid Vouchers:")
+            table_lines.append(f"Invalid {item_type_plural}:")
             table_lines.append("-" * 100)
             
-            for v in preview_vouchers:
-                voucher_id = v.get('id', '')
-                voucher_num = v.get('voucher_number', 'N/A')
-                date = v.get('voucher_date', 'N/A')
+            for v in preview_items:
+                item_id = v.get('id', '')
+                item_num = v.get('invoice_number' if is_invoice else 'voucher_number', 'N/A')
+                date = v.get('invoice_date' if is_invoice else 'voucher_date', 'N/A')
                 amount = v.get('amount', 0)
-                supplier = v.get('supplier_name', 'N/A') or 'N/A'
+                
+                if is_invoice:
+                    contact = v.get('contact_name', 'N/A') or 'N/A'
+                    contact_label = 'Contact'
+                else:
+                    contact = v.get('supplier_name', 'N/A') or 'N/A'
+                    contact_label = 'Supplier'
+                
                 reason = v.get('validation_reason', 'N/A')
                 
                 # Format with proper alignment
-                table_lines.append(f"  Voucher:  {voucher_num}")
-                table_lines.append(f"  ID:       {voucher_id}")
-                table_lines.append(f"  Link:     https://my.sevdesk.de/ex/detail/id/{voucher_id}")
+                table_lines.append(f"  {item_type}:  {item_num}")
+                table_lines.append(f"  ID:       {item_id}")
+                table_lines.append(f"  Link:     https://my.sevdesk.de/ex/detail/id/{item_id}")
                 table_lines.append(f"  Date:     {date}")
                 table_lines.append(f"  Amount:   €{amount:,.2f}")
-                table_lines.append(f"  Supplier: {supplier}")
+                table_lines.append(f"  {contact_label}: {contact}")
                 table_lines.append(f"  Reason:   {reason}")
                 table_lines.append("-" * 100)
             
-            if len(invalid_vouchers) > 10:
-                table_lines.append(f"\n... and {len(invalid_vouchers) - 10} more voucher(s).")
+            if len(invalid_items) > 10:
+                table_lines.append(f"\n... and {len(invalid_items) - 10} more {report_type}(s).")
                 table_lines.append("See attached CSV for complete list.")
             
             table_preview = "\n".join(table_lines)
             
+            # Email body based on type
+            if is_invoice:
+                common_issues = """Common validation issues:
+- Invoices missing cost center assignment
+- Invoices with multiple cost centers
+- Cost centers not mapped to Actual Budget categories
+
+Note: Stornorechnung (cancellation invoices) and cancelled invoices (paidAmount = 0) are automatically excluded and not errors."""
+            else:
+                common_issues = """Common validation issues:
+- Regular vouchers missing cost center assignment
+- Geldtransit vouchers incorrectly assigned cost centers
+- Other accounting type mismatches"""
+            
             # Email body
             body = f"""
-Voucher validation completed with failures.
+{item_type} validation completed with failures.
 
 Summary:
-- Total invalid vouchers: {len(invalid_vouchers)}
+- Total invalid {report_type}s: {len(invalid_items)}
 - Report generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 {table_preview}
 
-Common validation issues:
-- Regular vouchers missing cost center assignment
-- Geldtransit vouchers incorrectly assigned cost centers
-- Other accounting type mismatches
+{common_issues}
 
-Please review the attached CSV file for complete details on which vouchers need correction.
+Please review the attached CSV file for complete details on which {report_type}s need correction.
 
-The system will automatically re-validate these vouchers on the next sync once corrected.
+The system will automatically re-validate these {report_type}s on the next sync once corrected.
 """
             msg.attach(MIMEText(body, 'plain'))
             
             # Create CSV attachment
-            csv_content = self.create_csv_content(invalid_vouchers)
-            filename = f"invalid_vouchers_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            csv_content = self.create_csv_content(invalid_items, report_type)
+            filename = f"invalid_{report_type}s_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             
             attachment = MIMEBase('application', 'octet-stream')
             attachment.set_payload(csv_content.encode('utf-8'))
@@ -197,7 +250,7 @@ The system will automatically re-validate these vouchers on the next sync once c
             server.send_message(msg)
             server.quit()
             
-            logger.info(f"✅ Validation report sent successfully ({len(invalid_vouchers)} invalid vouchers)")
+            logger.info(f"✅ Validation report sent successfully ({len(invalid_items)} invalid {report_type}s)")
             return True
             
         except Exception as e:
