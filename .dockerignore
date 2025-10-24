@@ -14,8 +14,25 @@ dist
 build
 .vscode
 .idea
+
+# Documentation (not needed in container)
 *.md
 !README.md
-data/sync_state.db*
+
+# Database and logs
+data/
+*.db
+*.db-journal
 *.log
+
+# Docker related
+docker-image/
+*.tar
+*.tar.gz
+Dockerfile.alpine
+
+# Scripts not needed in container
+scripts/debug_*.py
+scripts/check_*.py
+scripts/test_*.py
 

@@ -349,6 +349,39 @@ class ActualBudgetClient:
             for p in payees
         ]
     
+    def get_transactions(self, account_id: str) -> List[Dict]:
+        """
+        Get all transactions for a specific account.
+        
+        Args:
+            account_id: The account ID to get transactions for
+            
+        Returns:
+            List of transaction dictionaries with id, date, amount, etc.
+        """
+        from actual.database import Transactions
+        from sqlalchemy import select, and_
+        
+        stmt = select(Transactions).where(
+            and_(
+                Transactions.acct == account_id,
+                Transactions.tombstone == 0
+            )
+        )
+        transactions = self._actual.session.execute(stmt).scalars().all()
+        
+        return [
+            {
+                'id': str(t.id),
+                'date': t.date,
+                'amount': t.amount,
+                'notes': t.notes,
+                'category': str(t.category) if t.category else None,
+                'imported_id': t.financial_id
+            }
+            for t in transactions
+        ]
+    
     def get_categories(self) -> List[Dict]:
         """
         Get all categories.

@@ -96,6 +96,11 @@ def sync_invoices(config: 'Config', limit: int = None, dry_run: bool = False, re
     # Initialize validator
     validator = InvoiceValidator(category_mappings=category_mappings)
     
+    # Fetch cost centers to enable manual invoice mappings
+    logger.info("📥 Fetching cost centers for manual invoice mappings...")
+    cost_centers = sevdesk.get_cost_centers()
+    validator.set_cost_centers(cost_centers)
+    
     # Validate all invoices
     logger.info("✅ Validating invoices...")
     valid_invoices = []
@@ -118,16 +123,26 @@ def sync_invoices(config: 'Config', limit: int = None, dry_run: bool = False, re
         
         if result.is_valid:
             # Determine cost center
+            invoice_number = result.invoice_number
             invoice_cost_centre = invoice.get('costCentre')
-            if invoice_cost_centre and invoice_cost_centre.get('id'):
-                cost_centre_id = invoice_cost_centre.get('id')
-            else:
-                # Get from first position
-                for pos in positions:
-                    cc = pos.get('costCentre')
-                    if cc and cc.get('id'):
-                        cost_centre_id = cc.get('id')
-                        break
+            cost_centre_id = None
+            
+            # First check for manual mapping
+            if invoice_number in validator.MANUAL_INVOICE_COST_CENTERS:
+                cost_center_name = validator.MANUAL_INVOICE_COST_CENTERS[invoice_number]
+                cost_centre_id = validator.cost_center_name_to_id.get(cost_center_name)
+            
+            # If no manual mapping, get from invoice or positions
+            if not cost_centre_id:
+                if invoice_cost_centre and invoice_cost_centre.get('id'):
+                    cost_centre_id = invoice_cost_centre.get('id')
+                else:
+                    # Get from first position
+                    for pos in positions:
+                        cc = pos.get('costCentre')
+                        if cc and cc.get('id'):
+                            cost_centre_id = cc.get('id')
+                            break
             
             valid_invoices.append((invoice, cost_centre_id, result))
         else:
@@ -188,7 +203,7 @@ def sync_invoices(config: 'Config', limit: int = None, dry_run: bool = False, re
                 config.actual_file_id,
                 config.actual_verify_ssl
             ) as actual:
-                reconcile_result = reconcile_invoices(sevdesk, actual, db, dry_run)
+                reconcile_result = reconcile_invoices(sevdesk, actual, db, config.actual_account_name, dry_run)
                 result['deleted'] = reconcile_result['deleted']
         
         return result
@@ -234,11 +249,14 @@ def sync_invoices(config: 'Config', limit: int = None, dry_run: bool = False, re
             invoice_date_str = result.invoice_date
             amount = result.amount
             
-            # Convert amount to cents (negative for income)
-            amount_cents = int(amount * -100)  # Negative for income
+            # Convert amount to cents (positive for income in Actual Budget)
+            amount_cents = int(amount * 100)  # Positive = Inflow/Income
             
-            # Parse date
+            # Parse date - handle ISO format with timezone
             from datetime import datetime
+            # Invoice date comes as '2025-10-23T00:00:00+02:00', extract just the date part
+            if 'T' in invoice_date_str:
+                invoice_date_str = invoice_date_str.split('T')[0]
             invoice_date = datetime.strptime(invoice_date_str, '%Y-%m-%d').date()
             
             # Get category ID
@@ -310,7 +328,7 @@ def sync_invoices(config: 'Config', limit: int = None, dry_run: bool = False, re
             config.actual_file_id,
             config.actual_verify_ssl
         ) as actual:
-            reconcile_result = reconcile_invoices(sevdesk, actual, db, dry_run)
+            reconcile_result = reconcile_invoices(sevdesk, actual, db, config.actual_account_name, dry_run)
             result['deleted'] = reconcile_result['deleted']
     
     return result

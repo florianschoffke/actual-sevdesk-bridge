@@ -17,6 +17,18 @@ class InvoiceValidationResult:
 class InvoiceValidator:
     """Validates invoices before syncing to Actual Budget."""
     
+    # Manual cost center mappings for specific invoice numbers
+    # These invoices don't have a cost center in SevDesk but we know which one to use
+    MANUAL_INVOICE_COST_CENTERS = {
+        '2025-194': 'Gemeindefreizeit',
+        '2025-193': 'Gemeindefreizeit',
+        '2025-192': 'Gemeindefreizeit',
+        '2025-191': 'Gemeindefreizeit',
+        '2025-190': 'Gemeindefreizeit',
+        '2025-189': 'Gemeindefreizeit',
+        '2025-187': 'Gemeindefreizeit',
+    }
+    
     def __init__(
         self,
         category_mappings: Dict[str, str]
@@ -29,6 +41,23 @@ class InvoiceValidator:
         """
         self.category_mappings = category_mappings
         self.validation_errors: List[InvoiceValidationResult] = []
+        
+        # Build reverse mapping: cost center name -> cost center id
+        # We'll need to get this from the category mappings which store the name
+        self.cost_center_name_to_id: Dict[str, str] = {}
+    
+    def set_cost_centers(self, cost_centers: List[Dict]):
+        """
+        Set cost centers data for name-to-ID mapping.
+        
+        Args:
+            cost_centers: List of cost center dicts from SevDesk with 'id' and 'name'
+        """
+        self.cost_center_name_to_id = {
+            cc['name']: str(cc['id']) 
+            for cc in cost_centers 
+            if 'name' in cc and 'id' in cc
+        }
     
     def validate_invoice(
         self,
@@ -103,16 +132,34 @@ class InvoiceValidator:
         
         # No cost center found
         if not cost_centre_id:
-            result = InvoiceValidationResult(
-                is_valid=False,
-                invoice_id=invoice_id,
-                invoice_date=invoice_date,
-                amount=amount,
-                invoice_number=invoice_number,
-                reason="Invoice has no cost center assigned"
-            )
-            self.validation_errors.append(result)
-            return result
+            # Check if there's a manual mapping for this invoice number
+            if invoice_number in self.MANUAL_INVOICE_COST_CENTERS:
+                cost_center_name = self.MANUAL_INVOICE_COST_CENTERS[invoice_number]
+                cost_centre_id = self.cost_center_name_to_id.get(cost_center_name)
+                
+                if not cost_centre_id:
+                    result = InvoiceValidationResult(
+                        is_valid=False,
+                        invoice_id=invoice_id,
+                        invoice_date=invoice_date,
+                        amount=amount,
+                        invoice_number=invoice_number,
+                        reason=f"Manual cost center mapping '{cost_center_name}' not found in SevDesk"
+                    )
+                    self.validation_errors.append(result)
+                    return result
+            else:
+                # No manual mapping and no cost center
+                result = InvoiceValidationResult(
+                    is_valid=False,
+                    invoice_id=invoice_id,
+                    invoice_date=invoice_date,
+                    amount=amount,
+                    invoice_number=invoice_number,
+                    reason="Invoice has no cost center assigned"
+                )
+                self.validation_errors.append(result)
+                return result
         
         # Check if cost center is mapped to a category
         if cost_centre_id not in self.category_mappings:

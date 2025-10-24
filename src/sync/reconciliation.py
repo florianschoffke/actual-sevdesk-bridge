@@ -396,6 +396,7 @@ def reconcile_invoices(
     sevdesk: 'SevDeskClient',
     actual: 'ActualBudgetClient',
     db: 'Database',
+    account_name: str,
     dry_run: bool = False
 ) -> Dict:
     """
@@ -412,6 +413,7 @@ def reconcile_invoices(
         sevdesk: SevDesk API client
         actual: Actual Budget API client
         db: Database instance
+        account_name: Name of the account in Actual Budget
         dry_run: If True, only report what would be done without making changes
     
     Returns:
@@ -439,14 +441,37 @@ def reconcile_invoices(
     
     not_found_invoices = []
     not_paid_invoices = []
+    missing_transactions = []
     errors = []
+    
+    # Get all transactions from Actual Budget for comparison
+    logger.info("Fetching transactions from Actual Budget...")
+    account = actual.get_or_create_account(account_name)
+    if not account:
+        logger.error(f"Account '{account_name}' not found")
+        return {
+            'checked': 0,
+            'deleted': 0,
+            'errors': 1
+        }
+    
+    transactions = actual.get_transactions(account['id'])
+    actual_transaction_ids = {t['id'] for t in transactions}
+    logger.info(f"Found {len(actual_transaction_ids)} transactions in Actual Budget")
     
     # Check each invoice's current status
     for idx, mapping in enumerate(mappings, 1):
         sevdesk_id = mapping['sevdesk_id']
         invoice_id = sevdesk_id.replace('invoice_', '')
+        actual_id = mapping['actual_id']
         
         try:
+            # Check if transaction exists in Actual Budget
+            if actual_id not in actual_transaction_ids:
+                logger.debug(f"Transaction {actual_id} for invoice {invoice_id} not found in Actual Budget")
+                missing_transactions.append(mapping)
+                continue
+            
             # Get invoice from SevDesk
             invoice = sevdesk.get_invoice(invoice_id)
             
@@ -472,11 +497,12 @@ def reconcile_invoices(
             errors.append({'invoice_id': invoice_id, 'error': str(e)})
     
     # Calculate totals
-    to_remove = not_found_invoices + not_paid_invoices
+    to_remove = not_found_invoices + not_paid_invoices + missing_transactions
     
     logger.info(f"Results: {len(mappings) - len(to_remove) - len(errors)} OK, "
                 f"{len(not_paid_invoices)} not paid, "
                 f"{len(not_found_invoices)} deleted, "
+                f"{len(missing_transactions)} missing transactions, "
                 f"{len(errors)} errors")
     
     if not to_remove:
